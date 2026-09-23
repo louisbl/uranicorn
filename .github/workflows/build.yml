@@ -1,0 +1,59 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "30 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/louisbl/uranicorn
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    container: quay.io/fedora/fedora:44
+    steps:
+      - run: dnf -y install ShellCheck git
+      - uses: actions/checkout@v5
+      - run: shellcheck -S warning build.sh
+
+  build:
+    needs: lint
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - uses: actions/checkout@v5
+
+      - name: Build
+        run: |
+          sudo podman build --pull=newer \
+            --label org.opencontainers.image.source=https://github.com/${{ github.repository }} \
+            -t "$IMAGE:ci" .
+
+      - uses: sigstore/cosign-installer@v3
+        if: github.event_name != 'pull_request'
+
+      - name: Push and sign
+        if: github.event_name != 'pull_request'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
+          COSIGN_PASSWORD: ""
+        run: |
+          major=$(sudo podman run --rm "$IMAGE:ci" rpm -E %fedora)
+          echo "$TOKEN" | sudo podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+          for tag in "$major" "$major.$(date -u +%Y%m%d)" latest; do
+            sudo podman tag "$IMAGE:ci" "$IMAGE:$tag"
+            sudo podman push --digestfile /tmp/digest "$IMAGE:$tag"
+          done
+          cosign login ghcr.io -u "${{ github.actor }}" -p "$TOKEN"
+          cosign sign -y --key env://COSIGN_PRIVATE_KEY "$IMAGE@$(cat /tmp/digest)"

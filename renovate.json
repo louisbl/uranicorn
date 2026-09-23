@@ -1,0 +1,7 @@
+{
+  "extends": ["config:recommended"],
+  "packageRules": [
+    { "matchDatasources": ["docker"], "pinDigests": true, "groupName": "images", "automerge": true },
+    { "matchDatasources": ["docker"], "matchUpdateTypes": ["major"], "enabled": false }
+  ]
+}

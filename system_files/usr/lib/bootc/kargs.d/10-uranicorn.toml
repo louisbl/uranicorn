@@ -1,0 +1,7 @@
+kargs = [
+    "rd.driver.blacklist=nouveau", "modprobe.blacklist=nouveau", "nvidia-drm.modeset=1",
+    "rd.vconsole.keymap=us-altgr-intl", "vconsole.keymap=us-altgr-intl",
+    "vt.default_red=36,237,166,238,138,245,139,184,91,237,166,238,138,245,139,202",
+    "vt.default_grn=39,135,218,212,173,189,213,192,96,135,218,212,173,189,213,211",
+    "vt.default_blu=58,150,149,159,244,230,202,224,120,150,149,159,244,230,202,245",
+]
