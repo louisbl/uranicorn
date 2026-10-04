@@ -1,33 +1,39 @@
-image := "ghcr.io/louisbl/uranicorn"
-vm_disk := "/var/lib/libvirt/images/uranicorn.qcow2"
+image := "localhost/uranicorn:dev"
+vm := "uranicorn-test"
+host := if path_exists("/run/.toolboxenv") == "true" { "flatpak-spawn --host " } else { "" }
 
 # List the RPMs provided by the input images
 inputs:
     #!/usr/bin/bash
     for img in $(awk '/^FROM/ { print $2 }' Containerfile); do
         echo "== $img"
-        ctr=$(sudo podman create "$img" true)
-        sudo podman export "$ctr" | tar -t | grep '\.rpm$' || true
-        sudo podman rm -f "$ctr" >/dev/null
+        ctr=$(podman create "$img" true)
+        podman export "$ctr" | tar -t | grep '\.rpm$' || true
+        podman rm -f "$ctr" >/dev/null
     done
 
-build:
-    sudo podman build --pull=newer -t {{image}}:dev .
+lint:
+    shellcheck -S warning build.sh
+    for f in packages/*.txt; do LC_ALL=C sort -cu "$f"; done
 
-vm:
-    mkdir -p output
-    sudo podman run --rm -it --privileged --security-opt label=type:unconfined_t \
-        -v ./output:/output -v ./vm.toml:/config.toml:ro \
-        -v /var/lib/containers/storage:/var/lib/containers/storage \
-        quay.io/centos-bootc/bootc-image-builder:latest \
-        --type qcow2 --rootfs btrfs --local {{image}}:dev
-    sudo cp output/qcow2/disk.qcow2 {{vm_disk}}
-    sudo virt-install --name uranicorn-test --vcpus 4 --memory 6144 --import \
-        --disk {{vm_disk}} --os-variant fedora-unknown \
-        --boot uefi \
-        --video model.type=virtio,model.acceleration.accel3d=yes \
-        --graphics spice,listen=none,gl.enable=yes,gl.rendernode=/dev/dri/by-path/pci-0000:00:02.0-render \
-       --noautoconsole
+sort:
+    for f in packages/*.txt; do LC_ALL=C sort -u -o "$f" "$f"; done
+
+build:
+    podman build --pull=newer -t {{image}} .
+
+check: build
+    {{host}}bcvk ephemeral run-ssh {{image}} 'systemctl --failed --no-legend; cat /proc/cmdline; readlink /etc/systemd/system/display-manager.service'
+
+vm: build
+    {{host}}bcvk libvirt run --filesystem btrfs --name {{vm}} --memory 6144 --cpus 4 {{image}}
+
+vm-ssh:
+    {{host}}bcvk libvirt ssh {{vm}}
+
+vm-rm:
+    {{host}}bcvk libvirt rm -f {{vm}}
 
 verify:
-    cosign verify --key cosign.pub {{image}}:latest
+    cosign verify --key cosign.pub ghcr.io/louisbl/uranicorn:latest
+

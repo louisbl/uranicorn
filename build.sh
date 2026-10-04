@@ -9,29 +9,22 @@ rpms() { find /tmp/akmods /tmp/akmods-nvidia -name "$1" | awk -F/ '!seen[$NF]++'
 
 grep -q 'BEGIN PUBLIC KEY' "$KEY" || die "cosign.pub is a placeholder"
 
-dnf -y remove \
-    firefox firefox-langpacks opensc \
-    open-vm-tools open-vm-tools-desktop hyperv-daemons qemu-guest-agent \
-    spice-vdagent spice-webdavd virtualbox-guest-additions \
-    sddm sddm-wayland-sway lxqt-policykit dunst rofi rofi-themes \
-    orca brltty speech-dispatcher \
-    ibus-anthy ibus-hangul ibus-libpinyin ibus-m17n ibus-chewing ibus-typing-booster \
-    gamemode sos fpaste tuned-switcher b43-openfwwf b43-fwcutter \
-    fedora-workstation-repositories fedora-third-party fedora-chromium-config fedora-bookmarks
+pkgs() { grep -Ev '^[[:space:]]*(#|$)' "/ctx/packages/$1"; }
 
-dnf -y install --setopt=install_weak_deps=False \
-    niri xwayland-satellite xdg-desktop-portal-gnome fuzzel foot foot-terminfo waybar \
-    mako swaybg swayidle swaylock playerctl brightnessctl tuigreet wl-mirror mate-polkit \
-    xdg-native-messaging-proxy keepassxc fish vim-enhanced parted tcpdump just \
-    clamav clamav-freshclam clamd distrobox crun-krun \
-    libvirt-daemon-kvm libvirt-daemon-config-network \
-    virt-install virt-top guestfs-tools
+mapfile -t REMOVE < <(pkgs remove.txt)
+mapfile -t INSTALL < <(pkgs install.txt)
+dnf -y remove "${REMOVE[@]}"
+dnf -y install --setopt=install_weak_deps=False "${INSTALL[@]}"
+
+for fw in 'ibt-0040-0041.sfi*' 'iwlwifi-so-a0-gf-a0-*.ucode*' 'adlp_dmc.bin*'; do
+    [[ -n $(find /usr/lib/firmware -name "$fw" -print -quit) ]] || die "firmware missing: $fw"
+done
+
 systemctl enable virtqemud.socket virtnetworkd.socket virtstoraged.socket
-
 ln -sf /usr/lib/systemd/system/greetd.service /etc/systemd/system/display-manager.service
 
-# Desktop defaults: compile dconf, validate configs shipped in system_files
 dconf update
+test -x /usr/libexec/polkit-mate-authentication-agent-1 || die "polkit agent path changed"
 
 # Kernel must match the one the NVIDIA kmod was built for
 KMOD=$(rpms 'kmod-nvidia-*.rpm' | tail -n1)
@@ -49,7 +42,6 @@ if [[ $(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}' kernel-core) != "$KVER" ]]; 
 fi
 [[ $(ls /usr/lib/modules) == "$KVER" ]] || die "image kernel is not $KVER"
 
-# NVIDIA: ublue signing key and repos, signed kmod, matching userspace (negativo17 only)
 REPOS_BEFORE=$(ls /etc/yum.repos.d)
 mapfile -t ADDONS < <(rpms 'ublue-os-akmods-addons*.rpm'; rpms 'ublue-os-nvidia-addons*.rpm')
 dnf -y install "${ADDONS[@]}"
@@ -65,7 +57,6 @@ dnf -y install --enablerepo=fedora-nvidia "nvidia-driver-$NV" "nvidia-driver-cud
 
 for f in $NEW_REPOS; do sed -i 's/^enabled=1/enabled=0/' "/etc/yum.repos.d/$f"; done
 
-# Boot splash (only once system_files/usr/share/plymouth/themes/uranicorn exists)
 THEME=/usr/share/plymouth/themes/uranicorn
 if [[ -d $THEME ]]; then
     cp --update=none /usr/share/plymouth/themes/spinner/*.png "$THEME/"
@@ -81,13 +72,23 @@ chmod 0600 "/usr/lib/modules/$KVER/initramfs.img"
 # Host verifies this image's signature
 python3 - "$IMAGE" "$KEY" <<'PY'
 import json, sys
+image, key = sys.argv[1], sys.argv[2]
 path = "/etc/containers/policy.json"
 policy = json.load(open(path))
-policy.setdefault("transports", {}).setdefault("docker", {})[sys.argv[1]] = [{
+accept = [{"type": "insecureAcceptAnything"}]
+policy["default"] = [{"type": "reject"}]
+transports = policy.setdefault("transports", {})
+transports["docker"] = {r: accept for r in [
+    "registry.fedoraproject.org", "registry.access.redhat.com",
+    "quay.io", "docker.io", "ghcr.io", "mcr.microsoft.com",
+]}
+transports["docker"][image] = [{
     "type": "sigstoreSigned",
-    "keyPath": sys.argv[2],
+    "keyPath": key,
     "signedIdentity": {"type": "matchRepository"},
 }]
+for t in ["containers-storage", "docker-daemon", "oci", "oci-archive", "dir", "docker-archive"]:
+    transports[t] = {"": accept}
 json.dump(policy, open(path, "w"), indent=2)
 PY
 

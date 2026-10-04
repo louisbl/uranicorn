@@ -23,13 +23,18 @@ jobs:
       - run: dnf -y install ShellCheck git
       - uses: actions/checkout@v5
       - run: shellcheck -S warning build.sh
+      - name: Package lists sorted, one per line, no duplicates
+        run: for f in packages/*.txt; do LC_ALL=C sort -cu "$f"; done
 
   build:
     needs: lint
     runs-on: ubuntu-24.04
     steps:
       - name: Free disk space
-        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache \
+            /usr/local/share/boost /usr/local/share/powershell /usr/share/swift
+          df -h /
 
       - uses: actions/checkout@v5
 
@@ -38,6 +43,23 @@ jobs:
           sudo podman build --pull=newer \
             --label org.opencontainers.image.source=https://github.com/${{ github.repository }} \
             -t "$IMAGE:ci" .
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Rechunk into stable, content-based layers
+        if: github.event_name != 'pull_request'
+        run: |
+          # Reuse the previous image's layer layout so unchanged packages keep identical layers
+          sudo podman pull "$IMAGE:latest" && sudo podman tag "$IMAGE:latest" "$IMAGE:chunked" || true
+          sudo podman run --rm --privileged \
+            -v /var/lib/containers:/var/lib/containers \
+            quay.io/fedora/fedora-bootc:44 \
+            /usr/libexec/bootc-base-imagectl rechunk "$IMAGE:ci" "$IMAGE:chunked"
+          sudo podman rmi "$IMAGE:ci"
+          sudo podman inspect --format '{{ len .RootFS.Layers }} layers; labels: {{ json .Labels }}' "$IMAGE:chunked"
+          df -h /
 
       - uses: sigstore/cosign-installer@v3
         if: github.event_name != 'pull_request'
@@ -49,11 +71,11 @@ jobs:
           COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
           COSIGN_PASSWORD: ""
         run: |
-          major=$(sudo podman run --rm "$IMAGE:ci" rpm -E %fedora)
-          echo "$TOKEN" | sudo podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+          major=$(sudo podman run --rm "$IMAGE:chunked" rpm -E %fedora)
           for tag in "$major" "$major.$(date -u +%Y%m%d)" latest; do
-            sudo podman tag "$IMAGE:ci" "$IMAGE:$tag"
+            sudo podman tag "$IMAGE:chunked" "$IMAGE:$tag"
             sudo podman push --digestfile /tmp/digest "$IMAGE:$tag"
           done
           cosign login ghcr.io -u "${{ github.actor }}" -p "$TOKEN"
           cosign sign -y --key env://COSIGN_PRIVATE_KEY "$IMAGE@$(cat /tmp/digest)"
+
