@@ -1,11 +1,11 @@
-FROM ghcr.io/ublue-os/akmods:main-44 AS akmods
-FROM ghcr.io/ublue-os/akmods-nvidia-open:main-44 AS akmods-nvidia
+FROM ghcr.io/ublue-os/akmods:main-45 AS akmods
+FROM ghcr.io/ublue-os/akmods-nvidia-open:main-45 AS akmods-nvidia
 
 FROM scratch AS ctx
 COPY build.sh /build.sh
 COPY packages /packages
 
-FROM quay.io/fedora/fedora-sway-atomic:44
+FROM quay.io/fedora/fedora-sway-atomic:45
 COPY system_files/ /
 COPY cosign.pub /etc/pki/containers/uranicorn.pub
 RUN --mount=type=bind,from=ctx,src=/,dst=/ctx \

@@ -1,3 +1,4 @@
+---
 name: build
 
 on:
@@ -7,7 +8,6 @@ on:
   schedule:
     - cron: "30 6 * * *"
   workflow_dispatch:
-
 permissions:
   contents: read
   packages: write
@@ -18,7 +18,7 @@ env:
 jobs:
   lint:
     runs-on: ubuntu-24.04
-    container: quay.io/fedora/fedora:44
+    container: quay.io/fedora/fedora:45
     steps:
       - run: dnf -y install ShellCheck git
       - uses: actions/checkout@v5
@@ -55,7 +55,7 @@ jobs:
           sudo podman pull "$IMAGE:latest" && sudo podman tag "$IMAGE:latest" "$IMAGE:chunked" || true
           sudo podman run --rm --privileged \
             -v /var/lib/containers:/var/lib/containers \
-            quay.io/fedora/fedora-bootc:44 \
+            quay.io/fedora/fedora-bootc:45 \
             /usr/libexec/bootc-base-imagectl rechunk "$IMAGE:ci" "$IMAGE:chunked"
           sudo podman rmi "$IMAGE:ci"
           sudo podman inspect --format '{{ len .RootFS.Layers }} layers; labels: {{ json .Labels }}' "$IMAGE:chunked"
@@ -78,4 +78,3 @@ jobs:
           done
           cosign login ghcr.io -u "${{ github.actor }}" -p "$TOKEN"
           cosign sign -y --key env://COSIGN_PRIVATE_KEY "$IMAGE@$(cat /tmp/digest)"
-
