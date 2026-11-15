@@ -71,10 +71,12 @@ chmod 0600 "/usr/lib/modules/$KVER/initramfs.img"
 
 # Host verifies this image's signature
 python3 - "$IMAGE" "$KEY" <<'PY'
-import json, sys
+import json, os, sys
 image, key = sys.argv[1], sys.argv[2]
-path = "/etc/containers/policy.json"
-policy = json.load(open(path))
+src = "/etc/containers/policy.json"
+if not os.path.exists(src):
+    src = "/usr/share/containers/policy.json"
+policy = json.load(open(src))
 accept = [{"type": "insecureAcceptAnything"}]
 policy["default"] = [{"type": "reject"}]
 transports = policy.setdefault("transports", {})
@@ -89,7 +91,7 @@ transports["docker"][image] = [{
 }]
 for t in ["containers-storage", "docker-daemon", "oci", "oci-archive", "dir", "docker-archive"]:
     transports[t] = {"": accept}
-json.dump(policy, open(path, "w"), indent=2)
+json.dump(policy, open("/usr/share/containers/policy.json", "w"), indent=2)
 PY
 
 # Cleanup, including the stale lock shipped by the base image
