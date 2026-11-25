@@ -1,7 +1,25 @@
 {
   "extends": ["config:recommended"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "fileMatch": ["^Containerfile$"],
+      "matchStrings": ["ARG ASHELL_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "MalpenZibo/ashell"
+    }
+  ],
   "packageRules": [
-    { "matchDatasources": ["docker"], "pinDigests": true, "groupName": "images", "automerge": true },
-    { "matchDatasources": ["docker"], "matchUpdateTypes": ["major"], "enabled": false }
+    {
+      "matchDatasources": ["docker"],
+      "pinDigests": true,
+      "groupName": "images",
+      "automerge": true
+    },
+    {
+      "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    }
   ]
 }

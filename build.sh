@@ -25,6 +25,7 @@ ln -sf /usr/lib/systemd/system/greetd.service /etc/systemd/system/display-manage
 
 dconf update
 test -x /usr/libexec/polkit-mate-authentication-agent-1 || die "polkit agent path changed"
+test -x /usr/bin/ashell || die "ashell binary missing"
 
 # Kernel must match the one the NVIDIA kmod was built for
 KMOD=$(rpms 'kmod-nvidia-*.rpm' | tail -n1)

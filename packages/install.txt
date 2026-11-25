@@ -20,7 +20,6 @@ libvirt-daemon-driver-nodedev
 libvirt-daemon-driver-qemu
 libvirt-daemon-driver-secret
 libvirt-daemon-driver-storage-core
-mako
 mate-polkit
 niri
 parted
